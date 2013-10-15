@@ -1,3 +1,4 @@
+#!/usr/bin/env python
 # -*- coding: utf-8 -*-
 #
 # Copyright © 2013 Red Hat, Inc.
@@ -10,27 +11,33 @@
 # NON-INFRINGEMENT, or FITNESS FOR A PARTICULAR PURPOSE. You should
 # have received a copy of GPLv2 along with this software; if not, see
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
+import functools
 import pickle
+import bson
 
+import celery
 from celery.schedules import schedule
 
 from pulp.common import dateutils
-from pulp.server.db.connection import get_collection
-
-collection = get_collection('scheduled_calls')
+from pulp.server.async.tasks import Task
+from pulp.server.compat import json, json_util
+from pulp.server.db import connection
+from pulp.server.db.model.dispatch import ScheduledCall
+from pulp.server.itineraries import repo
 
 
 def migrate(*args, **kwargs):
+    collection = connection.get_collection('scheduled_calls')
 
-    map(convert, collection.find())
+    map(functools.partial(convert, collection.save), collection.find())
 
 
-def convert(call):
-    del call['next_run']
-    del call['exit_states']
+def convert(save_func, call):
+    del call['call_exit_states']
     call['total_run_count'] = call.pop('call_count')
 
-    interval, start_time, occurances = dateutils.parse_iso8601_interval(call['schedule'])
+    call['iso_schedule'] = call['schedule']
+    interval, start_time, occurrences = dateutils.parse_iso8601_interval(call['schedule'])
     call['schedule'] = pickle.dumps(schedule(interval))
 
     call_request = call.pop('serialized_call_request')
@@ -38,10 +45,29 @@ def convert(call):
     call['kwargs'] = pickle.loads(call_request['kwargs'])
     # pickled string
     call['principal'] = call_request['principal']
+    next_run = call['next_run'].replace(tzinfo=dateutils.utc_tz())
+    call['next_run'] = dateutils.format_iso8601_datetime(next_run)
+    first_run = call['first_run'].replace(tzinfo=dateutils.utc_tz())
+    call['first_run'] = dateutils.format_iso8601_datetime(first_run)
+    last_run_at = call.pop('last_run').replace(tzinfo=dateutils.utc_tz())
+    call['last_run_at'] = dateutils.format_iso8601_datetime(last_run_at)
 
-    # TODO get task
+    task = get_task(call_request['callable_name'])
+    call['task'] = pickle.dumps(task)
 
-    collection.save(call)
+    #save_func(call)
+    foo = bson.BSON.decode(bson.BSON.encode(call))
+    print json.dumps(foo, indent=4, default=json_util.default)
+    print ScheduledCall.from_db(call)
+
+
+def get_task(name):
+    return celery.task(repo.dummy_itinerary, name=name, base=Task)
+
+
+if __name__ == '__main__':
+    connection.initialize()
+    migrate()
 
 
 FOO = """
