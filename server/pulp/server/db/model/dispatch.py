@@ -11,10 +11,9 @@
 # have received a copy of GPLv2 along with this software; if not, see
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
 
-from datetime import datetime
+from datetime import datetime, time
 import pickle
-from celery import current_app
-from celery.beat import ScheduleEntry
+from celery import current_app, beat
 
 from pulp.common import dateutils
 from pulp.common.tags import resource_tag
@@ -112,10 +111,11 @@ class ScheduledCall(Model):
 
     collection_name = 'scheduled_calls'
     unique_indices = ()
-    search_indices = ('task.tags', 'last_run')
+    search_indices = ('tags', 'last_run', 'last_updated')
 
     def __init__(self, iso_schedule, task, total_run_count, next_run,
-                 schedule, args, kwargs, principal, consecutive_failures=0, enabled=True, failure_threshold=None,
+                 schedule, args, kwargs, principal, last_updated,
+                 consecutive_failures=0, enabled=True, failure_threshold=None,
                  last_run_at=None, first_run=None, remaining_runs=None, id=None):
         """
         :type  schedule_entry:  celery.beat.ScheduleEntry
@@ -157,6 +157,8 @@ class ScheduledCall(Model):
         else:
             self.remaining_runs = remaining_runs
 
+        self.tag = resource_tag(dispatch_constants.RESOURCE_SCHEDULE_TYPE, str(self._id))
+
     @classmethod
     def from_db(cls, call):
         """
@@ -168,19 +170,16 @@ class ScheduledCall(Model):
         return cls(**call)
 
     def as_schedule_entry(self):
+        """
+        :return:    a ScheduleEntry instance based on this object
+        :rtype:     celery.beat.ScheduleEntry
+        """
         last_run = dateutils.parse_iso8601_datetime(self.last_run_at)
         return ScheduleEntry(self.name, self.task, last_run, self.total_run_count,
                              pickle.loads(self.schedule), pickle.loads(self.args),
                              pickle.loads(self.kwargs), self.options,
-                             self.relative, pickle.loads(self.app))
-
-    @property
-    def schedule_tag(self):
-        """
-        :return:    the resource tag appropriate for this schedule entry
-        :rtype:     basestring
-        """
-        return resource_tag(dispatch_constants.RESOURCE_SCHEDULE_TYPE, str(self._id))
+                             self.relative, pickle.loads(self.app),
+                             scheduled_call=self)
 
     @staticmethod
     def explode_schedule_entry(entry):
@@ -195,6 +194,28 @@ class ScheduledCall(Model):
         schedule_keys = ('name', 'task', 'last_run_at', 'total_run_count',
                          'schedule', 'args', 'kwargs', 'app')
         return dict((k, getattr(entry, k)) for k in schedule_keys)
+
+    def save(self):
+        """
+        Saves the current instance to the database
+        """
+        self.get_collection().save(self)
+
+
+class ScheduleEntry(beat.ScheduleEntry):
+    def __init__(self, *args, **kwargs):
+        """
+        :param scheduled_call:  the scheduled call that produced this instance
+        :type  scheduled_call:  pulp.server.db.model.dispatch.ScheduledCall
+        """
+        self._scheduled_call = kwargs.pop('scheduled_call')
+        super(ScheduleEntry, self).__init__(*args, **kwargs)
+
+    def __next__(self):
+        self._scheduled_call.last_run_at = time.time()
+        self._scheduled_call.total_run_count += 1
+        self._scheduled_call.save()
+        return self._scheduled_call.as_schedule_entry
 
 
 class ArchivedCall(Model):

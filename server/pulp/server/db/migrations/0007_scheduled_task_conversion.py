@@ -17,6 +17,7 @@ import bson
 
 import celery
 from celery.schedules import schedule
+import time
 
 from pulp.common import dateutils
 from pulp.server.async.tasks import Task
@@ -54,6 +55,7 @@ def convert(save_func, call):
 
     task = get_task(call_request['callable_name'])
     call['task'] = pickle.dumps(task)
+    call['last_updated'] = time.time()
 
     #save_func(call)
     foo = bson.BSON.decode(bson.BSON.encode(call))

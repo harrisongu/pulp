@@ -13,21 +13,62 @@
 
 from celery import beat
 
+from pulp.server.db.model.dispatch import ScheduledCall, ScheduleEntry
+
+
+collection = ScheduledCall.get_collection()
+
 
 class Scheduler(beat.Scheduler):
+    Entry = ScheduleEntry
+
     max_interval = 60
 
-    def setup_schedule(self):
-        # load schedules from DB
-        self._last_sync = 0
-        return super(Scheduler, self).setup_schedule()
+    def __init__(self, *args, **kwargs):
+        super(Scheduler, self).__init__(*args, **kwargs)
+        self._schedule = None
 
-    def _changes(self):
+    def setup_schedule(self):
+        super(Scheduler, self).setup_schedule()
+
+        # load schedules from DB
+        self._schedule = {}
+        update_timestamps = []
+        for call in collection.find({'enabled': True}):
+            self._schedule[call.id] = call.as_schedule_entry()
+            update_timestamps.append(call.last_updated)
+
+        self._most_recent_timestamp = max(update_timestamps)
+
+    @property
+    def schedule_changed(self):
         """
-        :return:    True iff the collection of scheduled calls has changed.
+        :return:    True iff the set of enabled scheduled calls has changed
+                    in the database.
         :rtype:     bool
         """
-        # possibly add a timestamp to the schedule entries, and look for either
-        # a change in the number of entries in the collection, or a timestamp
-        # newer than what's currently loaded
-        return True
+        if collection.find({'enabled'}).count() != len(self._schedule):
+            return True
+
+        query = {
+            'enabled': True,
+            'last_updated': {'$gt': self._most_recent_timestamp},
+        }
+        if collection.find(query).count() > 0:
+            return True
+
+        return False
+
+    @property
+    def schedule(self):
+        if self._schedule is None or self.schedule_changed:
+            self.setup_schedule()
+
+        return self._schedule
+
+    def add(self, **kwargs):
+        """
+        This class does not support adding entries in-place. You must add new
+        entries to the database, and they will be picked up automatically.
+        """
+        raise NotImplemented
