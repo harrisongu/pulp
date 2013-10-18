@@ -17,6 +17,7 @@ Itinerary creation for complex repository operations.
 import logging
 
 from celery import current_task
+import celery
 
 from pulp.common.tags import action_tag, resource_tag
 from pulp.server import config as pulp_config
@@ -106,7 +107,8 @@ def publish_itinerary(repo_id, distributor_id, overrides=None):
     return [call_request]
 
 
+@celery.task
 def dummy_itinerary(*args, **kwargs):
-    logger.debug('task: ' + current_task.name)
-    logger.debug('args: ' + str(args))
-    logger.debug('kwargs: ' + str(kwargs))
+    logger.info('task: ' + current_task.name)
+    logger.info('args: ' + str(args))
+    logger.info('kwargs: ' + str(kwargs))

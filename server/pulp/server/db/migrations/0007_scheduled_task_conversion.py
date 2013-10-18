@@ -25,6 +25,7 @@ from pulp.server.compat import json, json_util
 from pulp.server.db import connection
 from pulp.server.db.model.dispatch import ScheduledCall
 from pulp.server.itineraries import repo
+from pulp.server.itineraries.repo import dummy_itinerary
 
 
 def migrate(*args, **kwargs):
@@ -53,18 +54,13 @@ def convert(save_func, call):
     last_run_at = call.pop('last_run').replace(tzinfo=dateutils.utc_tz())
     call['last_run_at'] = dateutils.format_iso8601_datetime(last_run_at)
 
-    task = get_task(call_request['callable_name'])
-    call['task'] = pickle.dumps(task)
+    call['task'] = dummy_itinerary.name
     call['last_updated'] = time.time()
 
-    #save_func(call)
+    save_func(call)
     foo = bson.BSON.decode(bson.BSON.encode(call))
     print json.dumps(foo, indent=4, default=json_util.default)
     print ScheduledCall.from_db(call)
-
-
-def get_task(name):
-    return celery.task(repo.dummy_itinerary, name=name, base=Task)
 
 
 if __name__ == '__main__':

@@ -11,9 +11,14 @@
 # have received a copy of GPLv2 along with this software; if not, see
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
 
-from datetime import datetime, time
+import calendar
+from datetime import datetime
 import pickle
-from celery import current_app, beat
+import time
+from bson import ObjectId
+
+from celery import current_app, beat, schedules
+from celery.utils.timeutils import timedelta_seconds
 
 from pulp.common import dateutils
 from pulp.common.tags import resource_tag
@@ -116,24 +121,26 @@ class ScheduledCall(Model):
     def __init__(self, iso_schedule, task, total_run_count, next_run,
                  schedule, args, kwargs, principal, last_updated,
                  consecutive_failures=0, enabled=True, failure_threshold=None,
-                 last_run_at=None, first_run=None, remaining_runs=None, id=None):
+                 last_run_at=None, first_run=None, remaining_runs=None, id=None,
+                 tag=None, name=None):
         """
         :type  schedule_entry:  celery.beat.ScheduleEntry
 
         """
         super(ScheduledCall, self).__init__()
-        # add custom scheduled call tag to call request
-        if isinstance(task, basestring):
-            task = pickle.loads(task)
 
         self.id = id
-        self.name = task.name
+        self.name = id
         self.next_run = next_run
-        self.task = pickle.dumps(task)
+        self.task = task
         self.last_run_at = last_run_at
         self.total_run_count = total_run_count
         self.iso_schedule = iso_schedule
-        self.app = current_app
+        self.enabled = enabled
+        self.failure_threshold = failure_threshold
+        self.consecutive_failures = consecutive_failures
+        self.last_updated = last_updated
+        self.options = {}
 
         for key in ('schedule', 'args', 'kwargs', 'principal'):
             value = locals()[key]
@@ -142,14 +149,11 @@ class ScheduledCall(Model):
             else:
                 setattr(self, key, pickle.dumps(value))
 
-        self.enabled = enabled
-
-        self.failure_threshold = failure_threshold
-        self.consecutive_failures = consecutive_failures
-
         if first_run is None:
             self.first_run = dateutils.format_iso8601_datetime(
                 dateutils.parse_iso8601_interval(iso_schedule)[1])
+        elif isinstance(first_run, basestring):
+            self.first_run = dateutils.parse_iso8601_datetime(first_run)
         else:
             self.first_run = first_run
         if remaining_runs is None:
@@ -157,7 +161,7 @@ class ScheduledCall(Model):
         else:
             self.remaining_runs = remaining_runs
 
-        self.tag = resource_tag(dispatch_constants.RESOURCE_SCHEDULE_TYPE, str(self._id))
+        self.tag = tag or resource_tag(dispatch_constants.RESOURCE_SCHEDULE_TYPE, str(self._id))
 
     @classmethod
     def from_db(cls, call):
@@ -178,8 +182,7 @@ class ScheduledCall(Model):
         return ScheduleEntry(self.name, self.task, last_run, self.total_run_count,
                              pickle.loads(self.schedule), pickle.loads(self.args),
                              pickle.loads(self.kwargs), self.options,
-                             self.relative, pickle.loads(self.app),
-                             scheduled_call=self)
+                             self.relative, scheduled_call=self)
 
     @staticmethod
     def explode_schedule_entry(entry):
@@ -199,7 +202,26 @@ class ScheduledCall(Model):
         """
         Saves the current instance to the database
         """
-        self.get_collection().save(self)
+        to_save = {
+            'first_run': self.first_run,
+            'next_run': self.next_run,
+            'remaining_runs': self.remaining_runs,
+            'last_updated': self.last_updated,
+            'iso_schedule': self.iso_schedule,
+            'schedule': self.schedule,
+            'args': self.args,
+            'kwargs': self.kwargs,
+            'enabled': self.enabled,
+            'last_run_at': self.last_run_at,
+            'task': self.task,
+            'total_run_count': self.total_run_count,
+            'failure_threshold': self.failure_threshold,
+            'id': self.id,
+            'consecutive_failures': self.consecutive_failures,
+            'principal': self.principal,
+        }
+
+        self.get_collection().update({'_id': ObjectId(self.id)}, to_save)
 
 
 class ScheduleEntry(beat.ScheduleEntry):
@@ -211,11 +233,36 @@ class ScheduleEntry(beat.ScheduleEntry):
         self._scheduled_call = kwargs.pop('scheduled_call')
         super(ScheduleEntry, self).__init__(*args, **kwargs)
 
-    def __next__(self):
-        self._scheduled_call.last_run_at = time.time()
+    def _next_instance(self, last_run_at=None):
+        self._scheduled_call.last_run_at = dateutils.format_iso8601_utc_timestamp(time.time())
         self._scheduled_call.total_run_count += 1
         self._scheduled_call.save()
-        return self._scheduled_call.as_schedule_entry
+        return self._scheduled_call.as_schedule_entry()
+
+    __next__ = next = _next_instance
+
+    def is_due(self):
+        now_s = time.time()
+        first_run_s = calendar.timegm(self._scheduled_call.first_run.utctimetuple())
+        since_first_s = now_s - first_run_s
+
+        # if the first run is in the future, don't run it now
+        if since_first_s < 0:
+            return False, -since_first_s
+        # if it hasn't run before, run it now
+        if not self.total_run_count and self.last_run_at:
+            return True, 0
+
+        last_run_s = calendar.timegm(self.last_run_at.utctimetuple())
+        run_every_s = timedelta_seconds(self.schedule.run_every)
+        expected_runs = int(since_first_s - run_every_s)
+        last_scheduled_run_s = first_run_s + expected_runs * run_every_s
+
+        # is this hasn't run since the most recent scheduled run, then run now
+        if last_run_s < last_scheduled_run_s:
+            return True, 0
+        else:
+            return False, last_scheduled_run_s + run_every_s - now_s
 
 
 class ArchivedCall(Model):

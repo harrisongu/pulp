@@ -13,9 +13,11 @@
 
 from celery import beat
 
+from pulp.server.db import connection
 from pulp.server.db.model.dispatch import ScheduledCall, ScheduleEntry
 
 
+#connection.initialize()
 collection = ScheduledCall.get_collection()
 
 
@@ -25,16 +27,17 @@ class Scheduler(beat.Scheduler):
     max_interval = 60
 
     def __init__(self, *args, **kwargs):
-        super(Scheduler, self).__init__(*args, **kwargs)
         self._schedule = None
+        super(Scheduler, self).__init__(*args, **kwargs)
 
     def setup_schedule(self):
-        super(Scheduler, self).setup_schedule()
+        #super(Scheduler, self).setup_schedule()
 
         # load schedules from DB
         self._schedule = {}
         update_timestamps = []
         for call in collection.find({'enabled': True}):
+            call = ScheduledCall.from_db(call)
             self._schedule[call.id] = call.as_schedule_entry()
             update_timestamps.append(call.last_updated)
 
@@ -47,7 +50,7 @@ class Scheduler(beat.Scheduler):
                     in the database.
         :rtype:     bool
         """
-        if collection.find({'enabled'}).count() != len(self._schedule):
+        if collection.find({'enabled': True}).count() != len(self._schedule):
             return True
 
         query = {
