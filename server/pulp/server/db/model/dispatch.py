@@ -13,6 +13,7 @@
 
 import calendar
 from datetime import datetime
+import logging
 import pickle
 import time
 from bson import ObjectId
@@ -25,6 +26,9 @@ from pulp.common.tags import resource_tag
 from pulp.server.db.model.base import Model
 from pulp.server.dispatch import constants as dispatch_constants
 from pulp.server.webservices.serialization.db import scrub_mongo_fields
+
+
+logger = logging.getLogger(__name__)
 
 
 class CallResource(Model):
@@ -129,18 +133,18 @@ class ScheduledCall(Model):
         """
         super(ScheduledCall, self).__init__()
 
-        self.id = id
-        self.name = id
-        self.next_run = next_run
-        self.task = task
-        self.last_run_at = last_run_at
-        self.total_run_count = total_run_count
-        self.iso_schedule = iso_schedule
+        self.consecutive_failures = consecutive_failures
         self.enabled = enabled
         self.failure_threshold = failure_threshold
-        self.consecutive_failures = consecutive_failures
+        self.id = id
+        self.iso_schedule = iso_schedule
+        self.last_run_at = last_run_at
         self.last_updated = last_updated
+        self.name = id
+        self.next_run = next_run
         self.options = {}
+        self.task = task
+        self.total_run_count = total_run_count
 
         for key in ('schedule', 'args', 'kwargs', 'principal'):
             value = locals()[key]
@@ -203,22 +207,22 @@ class ScheduledCall(Model):
         Saves the current instance to the database
         """
         to_save = {
-            'first_run': self.first_run,
-            'next_run': self.next_run,
-            'remaining_runs': self.remaining_runs,
-            'last_updated': self.last_updated,
-            'iso_schedule': self.iso_schedule,
-            'schedule': self.schedule,
             'args': self.args,
-            'kwargs': self.kwargs,
+            'consecutive_failures': self.consecutive_failures,
             'enabled': self.enabled,
+            'failure_threshold': self.failure_threshold,
+            'first_run': self.first_run,
+            'id': self.id,
+            'kwargs': self.kwargs,
+            'iso_schedule': self.iso_schedule,
             'last_run_at': self.last_run_at,
+            'last_updated': self.last_updated,
+            'next_run': self.next_run,
+            'principal': self.principal,
+            'remaining_runs': self.remaining_runs,
+            'schedule': self.schedule,
             'task': self.task,
             'total_run_count': self.total_run_count,
-            'failure_threshold': self.failure_threshold,
-            'id': self.id,
-            'consecutive_failures': self.consecutive_failures,
-            'principal': self.principal,
         }
 
         self.get_collection().update({'_id': ObjectId(self.id)}, to_save)
@@ -234,35 +238,56 @@ class ScheduleEntry(beat.ScheduleEntry):
         super(ScheduleEntry, self).__init__(*args, **kwargs)
 
     def _next_instance(self, last_run_at=None):
+        now_s, first_run_s, since_first_s, run_every_s, expected_runs,\
+                last_scheduled_run_s = self._calculate_times()
+
         self._scheduled_call.last_run_at = dateutils.format_iso8601_utc_timestamp(time.time())
+        self._scheduled_call.next_run = dateutils.format_iso8601_utc_timestamp(last_scheduled_run_s + run_every_s)
         self._scheduled_call.total_run_count += 1
         self._scheduled_call.save()
         return self._scheduled_call.as_schedule_entry()
 
     __next__ = next = _next_instance
 
-    def is_due(self):
+    def _calculate_times(self):
         now_s = time.time()
         first_run_s = calendar.timegm(self._scheduled_call.first_run.utctimetuple())
         since_first_s = now_s - first_run_s
+        run_every_s = timedelta_seconds(self.schedule.run_every)
+        expected_runs = int(since_first_s/run_every_s)
+        last_scheduled_run_s = first_run_s + expected_runs * run_every_s
+
+        return now_s, first_run_s, since_first_s, run_every_s, expected_runs, last_scheduled_run_s
+
+
+    def is_due(self):
+        now_s, first_run_s, since_first_s, run_every_s, expected_runs, \
+                last_scheduled_run_s = self._calculate_times()
+
+        # seconds remaining until the next time this should run, not counting
+        # whether it gets run now or not
+        remaining_s = last_scheduled_run_s + run_every_s - now_s
 
         # if the first run is in the future, don't run it now
         if since_first_s < 0:
+            logger.debug('not running task %s: first run is in the future' % self.name)
             return False, -since_first_s
         # if it hasn't run before, run it now
-        if not self.total_run_count and self.last_run_at:
-            return True, 0
+        if not (self.total_run_count and self.last_run_at):
+            logger.debug('running task %s: it has never run before' % self.name)
+            return True, remaining_s
 
         last_run_s = calendar.timegm(self.last_run_at.utctimetuple())
-        run_every_s = timedelta_seconds(self.schedule.run_every)
-        expected_runs = int(since_first_s - run_every_s)
-        last_scheduled_run_s = first_run_s + expected_runs * run_every_s
 
         # is this hasn't run since the most recent scheduled run, then run now
         if last_run_s < last_scheduled_run_s:
-            return True, 0
+            logger.debug('running task %s: it has been %d seconds since last run' % (
+                         self.name, now_s - last_run_s))
+            return True, remaining_s
         else:
-            return False, last_scheduled_run_s + run_every_s - now_s
+            logger.debug('not running task %s: %d seconds remaining' % (
+                         self.name, remaining_s))
+            return False, remaining_s
 
 
 class ArchivedCall(Model):

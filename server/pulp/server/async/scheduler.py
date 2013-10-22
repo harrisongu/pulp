@@ -11,27 +11,30 @@
 # You should have received a copy of GPLv2 along with this software;
 # if not, see http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 
+import logging
+
 from celery import beat
 
-from pulp.server.db import connection
 from pulp.server.db.model.dispatch import ScheduledCall, ScheduleEntry
 
 
-#connection.initialize()
 collection = ScheduledCall.get_collection()
+
+
+logger = logging.getLogger(__name__)
 
 
 class Scheduler(beat.Scheduler):
     Entry = ScheduleEntry
 
-    max_interval = 60
+    max_interval = 90
 
     def __init__(self, *args, **kwargs):
         self._schedule = None
         super(Scheduler, self).__init__(*args, **kwargs)
 
     def setup_schedule(self):
-        #super(Scheduler, self).setup_schedule()
+        logger.debug('loading schedules from DB')
 
         # load schedules from DB
         self._schedule = {}
@@ -40,6 +43,8 @@ class Scheduler(beat.Scheduler):
             call = ScheduledCall.from_db(call)
             self._schedule[call.id] = call.as_schedule_entry()
             update_timestamps.append(call.last_updated)
+
+        logger.debug('loaded %d schedules' % len(self._schedule))
 
         self._most_recent_timestamp = max(update_timestamps)
 
@@ -51,6 +56,7 @@ class Scheduler(beat.Scheduler):
         :rtype:     bool
         """
         if collection.find({'enabled': True}).count() != len(self._schedule):
+            logging.debug('number of enabled schedules has changed')
             return True
 
         query = {
@@ -58,6 +64,7 @@ class Scheduler(beat.Scheduler):
             'last_updated': {'$gt': self._most_recent_timestamp},
         }
         if collection.find(query).count() > 0:
+            logging.debug('one or more enabled schedules has been updated')
             return True
 
         return False
