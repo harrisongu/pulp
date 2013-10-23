@@ -31,6 +31,7 @@ from pulp.server.dispatch.call import CallRequest
 from pulp.server.itineraries.repo import sync_with_auto_publish_itinerary, publish_itinerary
 from pulp.server.itineraries.repository import (repo_delete_itinerary, distributor_delete_itinerary,
                                                 distributor_update_itinerary)
+from pulp.server.managers.schedule.repo import RepoSyncScheduleManager
 from pulp.server.webservices import execution
 from pulp.server.webservices import serialization
 from pulp.server.webservices.controllers.base import JSONController
@@ -435,25 +436,11 @@ class SyncScheduleCollection(JSONController):
         schedule_options = self.params()
         sync_options = {'override_config': schedule_options.pop('override_config', {})}
 
-        schedule_manager = manager_factory.schedule_manager()
-        weight = pulp_config.config.getint('tasks', 'create_weight')
-        tags = [resource_tag(dispatch_constants.RESOURCE_REPOSITORY_TYPE, repo_id),
-                resource_tag(dispatch_constants.RESOURCE_REPOSITORY_IMPORTER_TYPE, importer_id),
-                action_tag('create_sync_schedule')]
-        call_request = CallRequest(schedule_manager.create_sync_schedule, # rbarlow_converted
-                                   [repo_id, importer_id, sync_options, schedule_options],
-                                   weight=weight,
-                                   tags=tags,
-                                   archive=True)
-        call_request.reads_resource(dispatch_constants.RESOURCE_REPOSITORY_TYPE, repo_id)
-        call_request.updates_resource(dispatch_constants.RESOURCE_REPOSITORY_IMPORTER_TYPE,
-                                      importer_id)
-        schedule_id = execution.execute_sync(call_request)
+        schedule = RepoSyncScheduleManager.create_sync_schedule(repo_id, importer_id,
+                                                                   sync_options, schedule_options)
 
-        scheduler = dispatch_factory.scheduler()
-        schedule = scheduler.get(schedule_id)
         obj = serialization.dispatch.scheduled_sync_obj(schedule)
-        obj.update(serialization.link.child_link_obj(schedule_id))
+        obj.update(serialization.link.child_link_obj(schedule.id))
         return self.created(obj['_href'], obj)
 
 

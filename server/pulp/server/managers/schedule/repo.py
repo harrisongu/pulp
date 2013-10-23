@@ -15,14 +15,15 @@ import copy
 
 from celery import task
 
-from pulp.common.tags import resource_tag
-from pulp.server import config as pulp_config, exceptions as pulp_exceptions
+from pulp.server import exceptions as pulp_exceptions
 from pulp.server.async.tasks import Task
-from pulp.server.dispatch import constants as dispatch_constants, factory as dispatch_factory
+from pulp.server.db.model.dispatch import ScheduledCall
+from pulp.server.dispatch import factory as dispatch_factory
 from pulp.server.dispatch.call import CallRequest
-from pulp.server.itineraries.repo import (sync_with_auto_publish_itinerary, publish_itinerary)
+from pulp.server.itineraries.repo import (publish_itinerary, dummy_itinerary)
 from pulp.server.managers import factory as managers_factory
 from pulp.server.managers.schedule import utils as schedule_utils
+from pulp.server.managers.schedule.utils import validate_initial_schedule_options
 
 
 _PUBLISH_OPTION_KEYS = ('override_config',)
@@ -39,25 +40,23 @@ class RepoSyncScheduleManager(object):
         :param importer_id:
         :param sync_options:
         :param schedule_data:
-        :return:
+        :return:    new schedule
+        :rtype:     pulp.server.db.model.dispatch.ScheduledCall
         """
         # validate the input
         RepoSyncScheduleManager._validate_importer(repo_id, importer_id)
         schedule_utils.validate_keys(sync_options, _SYNC_OPTION_KEYS)
-        if 'schedule' not in schedule_data:
-            raise pulp_exceptions.MissingValue(['schedule'])
 
-        # build the sync call request
+        validate_initial_schedule_options(schedule_data)
+
+        # TODO: put sync itinerary here
+        task = dummy_itinerary.name
         args = [repo_id]
         kwargs = {'overrides': sync_options['override_config']}
-        call_request = CallRequest(sync_with_auto_publish_itinerary, args, kwargs, weight=0) # rbarlow_converted
+        schedule = ScheduledCall(schedule_data['schedule'], task, args=args, kwargs=kwargs)
+        schedule.save()
 
-        # schedule the sync
-        scheduler = dispatch_factory.scheduler()
-        schedule_id = scheduler.add(call_request, **schedule_data)
-        importer_manager = managers_factory.repo_importer_manager()
-        importer_manager.add_sync_schedule(repo_id, schedule_id)
-        return schedule_id
+        return schedule
 
     @staticmethod
     def update_sync_schedule(repo_id, importer_id, schedule_id, sync_options, schedule_data):
