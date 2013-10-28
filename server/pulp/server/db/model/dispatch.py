@@ -119,6 +119,8 @@ class ScheduledCall(Model):
     """
     Serialized scheduled call request
     """
+    USER_UPDATE_FIELDS = set(['iso_schedule', 'args', 'kwargs', 'enabled',
+                          'failure_threshold'])
 
     collection_name = 'scheduled_calls'
     unique_indices = ()
@@ -246,6 +248,12 @@ class ScheduledCall(Model):
             'total_run_count': self.total_run_count,
         }
 
+    def for_display(self):
+        ret = self.as_dict()
+        del ret['principal']
+        del ret['schedule']
+        return ret
+
     def save(self):
         """
         Saves the current instance to the database
@@ -264,7 +272,8 @@ class ScheduledCall(Model):
         first_run_s = calendar.timegm(first_run_dt.utctimetuple())
         since_first_s = now_s - first_run_s
         run_every_s = timedelta_seconds(self.as_schedule_entry().schedule.run_every)
-        expected_runs = int(since_first_s/run_every_s)
+        # don't want this to be negative
+        expected_runs = max(int(since_first_s/run_every_s), 0)
         last_scheduled_run_s = first_run_s + expected_runs * run_every_s
 
         return now_s, first_run_s, since_first_s, run_every_s, expected_runs, last_scheduled_run_s
@@ -273,7 +282,12 @@ class ScheduledCall(Model):
         now_s, first_run_s, since_first_s, run_every_s, expected_runs, \
                 last_scheduled_run_s = self._calculate_times()
 
-        return dateutils.format_iso8601_utc_timestamp(last_scheduled_run_s + run_every_s)
+        if first_run_s > now_s:
+            next_run_s = first_run_s
+        else:
+            next_run_s = last_scheduled_run_s + run_every_s
+
+        return dateutils.format_iso8601_utc_timestamp(next_run_s)
 
 
 class ScheduleEntry(beat.ScheduleEntry):

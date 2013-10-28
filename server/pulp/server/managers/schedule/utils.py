@@ -10,15 +10,39 @@
 # PARTICULAR PURPOSE.
 # You should have received a copy of GPLv2 along with this software; if not,
 # see http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
+from bson import ObjectId
 import isodate
-from pulp.common import dateutils
 
-from pulp.server import exceptions as pulp_exceptions
+from pulp.common import dateutils
+from pulp.server import exceptions
+from pulp.server.db.model.criteria import Criteria
+from pulp.server.db.model.dispatch import ScheduledCall
 
 
 SCHEDULE_OPTIONS_FIELDS = ('failure_threshold', 'last_run', 'enabled')
 SCHEDULE_MUTABLE_FIELDS = ('call_request', 'schedule', 'failure_threshold', 'remaining_runs', 'enabled')
 
+
+def get(schedule_ids):
+    object_ids = map(ObjectId, schedule_ids)
+    criteria = Criteria(filters={'_id': {'$in': object_ids}})
+    schedules = ScheduledCall.get_collection().query(criteria)
+    return map(ScheduledCall.from_db, schedules)
+
+
+def delete(schedule_id):
+    ScheduledCall.get_collection().remove({'_id': ObjectId(schedule_id)}, safe=True)
+
+
+def update(schedule_id, delta):
+    unknown_keys = set(delta.keys()) - ScheduledCall.USER_UPDATE_FIELDS
+    if unknown_keys:
+        raise exceptions.UnsupportedValue(list(unknown_keys))
+
+    delta['last_updated'] = time.time()
+
+    spec = {'_id': ObjectId(schedule_id)}
+    ScheduledCall.get_collection().update(spec, {'$set': delta}, safe=True)
 
 def validate_keys(options, valid_keys, all_required=False):
     """
@@ -35,7 +59,7 @@ def validate_keys(options, valid_keys, all_required=False):
         if key not in valid_keys:
             invalid_keys.append(key)
     if invalid_keys:
-        raise pulp_exceptions.InvalidValue(invalid_keys)
+        raise exceptions.InvalidValue(invalid_keys)
     if not all_required:
         return
     missing_keys = []
@@ -43,7 +67,7 @@ def validate_keys(options, valid_keys, all_required=False):
         if key not in options:
             missing_keys.append(key)
     if missing_keys:
-        raise pulp_exceptions.MissingValue(missing_keys)
+        raise exceptions.MissingValue(missing_keys)
 
 
 def validate_initial_schedule_options(options):
@@ -62,7 +86,7 @@ def validate_initial_schedule_options(options):
     unknown_options = _find_unknown_options(options, SCHEDULE_OPTIONS_FIELDS)
 
     if unknown_options:
-        raise pulp_exceptions.UnsupportedValue(unknown_options)
+        raise exceptions.UnsupportedValue(unknown_options)
 
     invalid_options = []
 
@@ -78,7 +102,7 @@ def validate_initial_schedule_options(options):
     if not invalid_options:
         return
 
-    raise pulp_exceptions.InvalidValue(invalid_options)
+    raise exceptions.InvalidValue(invalid_options)
 
 
 def validate_updated_schedule_options(options):
@@ -91,15 +115,15 @@ def validate_updated_schedule_options(options):
     :raises: pulp.server.exceptions.InvalidValue if any of the options are invalid
     """
 
-    unknown_options = _find_unknown_options(options, SCHEDULE_MUTABLE_FIELDS)
+    unknown_options = _find_unknown_options(options, ScheduledCall.USER_UPDATE_FIELDS)
 
     if unknown_options:
-        raise pulp_exceptions.UnsupportedValue(unknown_options)
+        raise exceptions.UnsupportedValue(unknown_options)
 
     invalid_options = []
 
-    if 'schedule' in options and not _is_valid_schedule(options['schedule']):
-        invalid_options.append('schedule')
+    if 'iso_schedule' in options and not _is_valid_schedule(options['iso_schedule']):
+        invalid_options.append('iso_schedule')
 
     if 'failure_threshold' in options and not _is_valid_failure_threshold(options['failure_threshold']):
         invalid_options.append('failure_threshold')
@@ -113,7 +137,7 @@ def validate_updated_schedule_options(options):
     if not invalid_options:
         return
 
-    raise pulp_exceptions.InvalidValue(invalid_options)
+    raise exceptions.InvalidValue(invalid_options)
 
 
 def _find_unknown_options(options, known_options):
