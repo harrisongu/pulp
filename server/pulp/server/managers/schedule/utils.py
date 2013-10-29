@@ -12,6 +12,7 @@
 # see http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt
 from bson import ObjectId
 import isodate
+import time
 
 from pulp.common import dateutils
 from pulp.server import exceptions
@@ -43,6 +44,7 @@ def update(schedule_id, delta):
 
     spec = {'_id': ObjectId(schedule_id)}
     ScheduledCall.get_collection().update(spec, {'$set': delta}, safe=True)
+
 
 def validate_keys(options, valid_keys, all_required=False):
     """

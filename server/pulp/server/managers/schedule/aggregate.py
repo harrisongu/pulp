@@ -15,15 +15,11 @@
 from pulp.server.managers.schedule.consumer import (
     ConsumerContentInstallScheduleManager, ConsumerContentUpdateScheduleManager,
     ConsumerContentUninstallScheduleManager)
-from pulp.server.managers.schedule.repo import (
-    RepoPublishScheduleManager, RepoSyncScheduleManager)
 
 
 class AggregateScheduleManager(ConsumerContentInstallScheduleManager,
                                ConsumerContentUpdateScheduleManager,
-                               ConsumerContentUninstallScheduleManager,
-                               RepoPublishScheduleManager,
-                               RepoSyncScheduleManager):
+                               ConsumerContentUninstallScheduleManager):
     """
     Aggregate schedule management class for the creation, update, and deletion
     of system-defined scheduled actions.

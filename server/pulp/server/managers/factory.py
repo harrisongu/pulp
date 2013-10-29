@@ -61,6 +61,7 @@ TYPE_REPO_GROUP_QUERY           = 'repo-group-query-manager'
 TYPE_REPO_IMPORTER              = 'repo-importer-manager'
 TYPE_REPO_DISTRIBUTOR           = 'repo-distributor-manager'
 TYPE_REPO_PUBLISH               = 'repo-publish-manager'
+TYPE_REPO_PUBLISH_SCHEDULE      = 'repo-publish-schedule-manager'
 TYPE_REPO_QUERY                 = 'repo-query-manager'
 TYPE_REPO_SYNC                  = 'repo-sync-manager'
 TYPE_REPO_SYNC_SCHEDULE         = 'repo-sync-schedule-manager'
@@ -318,6 +319,12 @@ def repo_publish_manager():
     """
     return get_manager(TYPE_REPO_PUBLISH)
 
+def repo_publish_schedule_manager():
+    """
+    @rtype: L{pulp.server.managers.schedule.repo.RepoPublishScheduleManager}
+    """
+    return get_manager(TYPE_REPO_PUBLISH_SCHEDULE)
+
 def repo_query_manager():
     """
     @rtype: L{pulp.server.managers.repo.query.RepoQueryManager}
@@ -332,7 +339,7 @@ def repo_sync_manager():
 
 def repo_sync_schedule_manager():
     """
-    @rtype: L{pulp.server.managers.repo.sync.RepoSyncScheduleManager}
+    @rtype: L{pulp.server.managers.schedule.repo.RepoSyncScheduleManager}
     """
     return get_manager(TYPE_REPO_SYNC_SCHEDULE)
 
@@ -424,7 +431,7 @@ def initialize():
     from pulp.server.managers.repo.unit_association import RepoUnitAssociationManager
     from pulp.server.managers.repo.unit_association_query import RepoUnitAssociationQueryManager
     from pulp.server.managers.schedule.aggregate import AggregateScheduleManager
-    from pulp.server.managers.schedule.repo import RepoSyncScheduleManager
+    from pulp.server.managers.schedule.repo import RepoPublishScheduleManager, RepoSyncScheduleManager
     import pulp.server.managers.consumer.applicability
 
     # Builtins for a normal running Pulp server (used to reset the state of the
@@ -466,6 +473,7 @@ def initialize():
         TYPE_REPO_GROUP_QUERY : RepoGroupQueryManager,
         TYPE_REPO_IMPORTER: RepoImporterManager,
         TYPE_REPO_PUBLISH: RepoPublishManager,
+        TYPE_REPO_PUBLISH_SCHEDULE: RepoPublishScheduleManager,
         TYPE_REPO_QUERY: RepoQueryManager,
         TYPE_REPO_SYNC: RepoSyncManager,
         TYPE_REPO_SYNC_SCHEDULE: RepoSyncScheduleManager,
