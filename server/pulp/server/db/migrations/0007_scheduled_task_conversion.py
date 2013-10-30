@@ -52,6 +52,9 @@ def convert(save_func, call):
     call['last_run_at'] = dateutils.format_iso8601_datetime(last_run_at)
 
     call['task'] = dummy_itinerary.name
+    # TODO: if this is a consumer operation, add the schedule ID to the consumer
+    # object
+
     call['last_updated'] = time.time()
 
     save_func(call)

@@ -14,12 +14,26 @@
 """
 Itinerary creation for complex consumer operations.
 """
+import logging
+
+import celery
+from celery import current_task
 
 from pulp.common.tags import action_tag, resource_tag
 from pulp.server import config as pulp_config
 from pulp.server.dispatch import constants as dispatch_constants
 from pulp.server.dispatch.call import CallRequest
 from pulp.server.managers import factory as managers_factory
+
+
+logger = logging.getLogger(__name__)
+
+
+@celery.task
+def dummy_itinerary(*args, **kwargs):
+    logger.info('task: ' + current_task.name)
+    logger.info('args: ' + str(args))
+    logger.info('kwargs: ' + str(kwargs))
 
 
 def cancel_agent_request(call_request, call_report):

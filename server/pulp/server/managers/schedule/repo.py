@@ -11,13 +11,9 @@
 # have received a copy of GPLv2 along with this software; if not, see
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
 
-import copy
-
 from pulp.server import exceptions
 from pulp.server.db.model.dispatch import ScheduledCall
-from pulp.server.dispatch import factory as dispatch_factory
-from pulp.server.dispatch.call import CallRequest
-from pulp.server.itineraries.repo import publish_itinerary, dummy_itinerary
+from pulp.server.itineraries.repo import dummy_itinerary
 from pulp.server.managers import factory as managers_factory
 from pulp.server.managers.schedule import utils
 
@@ -139,7 +135,7 @@ class RepoPublishScheduleManager(object):
 
         utils.validate_initial_schedule_options(schedule_data)
 
-        # TODO: put sync itinerary here
+        # TODO: put publish itinerary here
         task = dummy_itinerary.name
         args = [repo_id, distributor_id]
         kwargs = {'overrides': publish_options['override_config']}

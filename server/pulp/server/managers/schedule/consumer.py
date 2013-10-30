@@ -13,18 +13,16 @@
 
 import copy
 
-from celery import task
 
 from pulp.common.tags import action_tag, resource_tag
-from pulp.server import exceptions as pulp_exceptions
-from pulp.server.async.tasks import Task
+from pulp.server import exceptions
+from pulp.server.db.model.dispatch import ScheduledCall
 from pulp.server.dispatch import constants as dispatch_constants, factory as dispatch_factory
-from pulp.server.dispatch.call import CallRequest
 from pulp.server.itineraries.consumer import (
     consumer_content_install_itinerary, consumer_content_uninstall_itinerary,
-    consumer_content_update_itinerary)
+    consumer_content_update_itinerary, dummy_itinerary)
 from pulp.server.managers import factory as managers_factory
-from pulp.server.managers.schedule import utils as schedule_utils
+from pulp.server.managers.schedule import utils
 
 
 UNIT_INSTALL_ACTION = 'scheduled_unit_install'
@@ -43,24 +41,23 @@ class ConsumerScheduleManager(object):
         consumer_manager = managers_factory.consumer_manager()
         consumer_manager.get_consumer(consumer_id)
 
-    @staticmethod
-    def _create_schedule(itinerary_method, action_name, consumer_id, units, options,
+    @classmethod
+    def _create_schedule(cls, itinerary_method, action_name, consumer_id, units, options,
                          schedule_data):
-        ConsumerScheduleManager._validate_consumer(consumer_id)
-        schedule_utils.validate_keys(options, _UNIT_OPTION_KEYS)
+        cls._validate_consumer(consumer_id)
+        utils.validate_keys(options, _UNIT_OPTION_KEYS)
         if 'schedule' not in schedule_data:
-            raise pulp_exceptions.MissingValue(['schedule'])
+            raise exceptions.MissingValue(['schedule'])
+        utils.validate_initial_schedule_options(schedule_data)
 
+        task = dummy_itinerary.name
         args = [consumer_id]
         kwargs = {'units': units,
                   'options': options.get('options', {})}
-        tags = [resource_tag(dispatch_constants.RESOURCE_CONSUMER_TYPE, consumer_id),
-                action_tag(action_name)]
-        call_request = CallRequest(itinerary_method, args, kwargs, weight=0, tags=tags) # rbarlow_converted
 
-        scheduler = dispatch_factory.scheduler()
-        schedule_id = scheduler.add(call_request, **schedule_data)
-        return schedule_id
+        schedule = ScheduledCall(schedule_data['schedule'], task, args=args, kwargs=kwargs)
+        schedule.save()
+
 
     @staticmethod
     def _update_schedule(consumer_id, schedule_id, units=None, options=None,
@@ -150,14 +147,6 @@ class ConsumerContentInstallScheduleManager(ConsumerScheduleManager):
         return self._delete_all_schedules(UNIT_INSTALL_ACTION, consumer_id)
 
 
-create_unit_install_schedule = task(
-    ConsumerContentInstallScheduleManager.create_unit_install_schedule, base=Task)
-delete_unit_install_schedule = task(
-    ConsumerContentInstallScheduleManager.delete_unit_install_schedule, base=Task)
-update_unit_install_schedule = task(
-    ConsumerContentInstallScheduleManager.update_unit_install_schedule, base=Task)
-
-
 class ConsumerContentUpdateScheduleManager(ConsumerScheduleManager):
     @staticmethod
     def create_unit_update_schedule(consumer_id, units, update_options, schedule_data):
@@ -208,14 +197,6 @@ class ConsumerContentUpdateScheduleManager(ConsumerScheduleManager):
         return self._delete_all_schedules(UNIT_UPDATE_ACTION, consumer_id)
 
 
-create_unit_update_schedule = task(
-    ConsumerContentUpdateScheduleManager.create_unit_update_schedule, base=Task)
-delete_unit_update_schedule = task(
-    ConsumerContentUpdateScheduleManager.delete_unit_update_schedule, base=Task)
-update_unit_update_schedule = task(
-    ConsumerContentUpdateScheduleManager.update_unit_update_schedule, base=Task)
-
-
 class ConsumerContentUninstallScheduleManager(ConsumerScheduleManager):
     @staticmethod
     def create_unit_uninstall_schedule(consumer_id, units, uninstall_options, schedule_data):
@@ -264,11 +245,3 @@ class ConsumerContentUninstallScheduleManager(ConsumerScheduleManager):
         @param consumer_id: unique id of the consumer
         """
         return self._delete_all_schedules(UNIT_UNINSTALL_ACTION, consumer_id)
-
-
-create_unit_uninstall_schedule = task(
-    ConsumerContentUninstallScheduleManager.create_unit_uninstall_schedule, base=Task)
-delete_unit_uninstall_schedule = task(
-    ConsumerContentUninstallScheduleManager.delete_unit_uninstall_schedule, base=Task)
-update_unit_uninstall_schedule = task(
-    ConsumerContentUninstallScheduleManager.update_unit_uninstall_schedule, base=Task)

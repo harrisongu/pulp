@@ -35,6 +35,7 @@ from pulp.server.webservices import execution
 from pulp.server.webservices import serialization
 from pulp.server.webservices.controllers.base import JSONController
 from pulp.server.webservices.controllers.decorators import auth_required
+from pulp.server.webservices.controllers.schedule import ScheduleResource
 from pulp.server.webservices.controllers.search import SearchController
 import pulp.server.exceptions as exceptions
 import pulp.server.managers.factory as manager_factory
@@ -428,18 +429,6 @@ class SyncScheduleCollection(JSONController):
         ret = schedule.for_display()
         ret.update(serialization.link.child_link_obj(schedule.id))
         return self.created(ret['_href'], ret)
-
-
-class ScheduleResource(JSONController):
-    def _get(self, schedule_id):
-        try:
-            schedule = utils.get([schedule_id])[0]
-        except IndexError:
-            raise exceptions.MissingResource(schedule_id=schedule_id)
-
-        ret = schedule.for_display()
-        ret.update(serialization.link.current_link_obj())
-        return self.ok(ret)
 
 
 class SyncScheduleResource(ScheduleResource):
