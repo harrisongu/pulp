@@ -9,6 +9,8 @@
 # have received a copy of GPLv2 along with this software; if not, see
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
 
+from hashlib import sha256
+
 from pulp.server.db.model.base import Model
 
 # -- classes -----------------------------------------------------------------
@@ -55,3 +57,21 @@ class ContentType(Model):
         self.search_indexes = search_indexes
 
         self.referenced_types = referenced_types
+
+
+class DownloadCatalog(Model):
+
+    collection_name = 'content_download_catalog'
+    unique_indices = ('unit_id',)
+
+    @staticmethod
+    def hash(type_id, unit_key):
+        h = sha256()
+        h.update(type_id)
+        h.update(repr(sorted(unit_key.items())))
+        return h.hexdigest()
+
+    def __init__(self, type_id, unit_key, url):
+        Model.__init__(self)
+        self.unit_id = self.hash(type_id, unit_key)
+        self.url = url
