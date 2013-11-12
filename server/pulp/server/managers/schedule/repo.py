@@ -13,9 +13,10 @@
 
 from pulp.server import exceptions
 from pulp.server.db.model.dispatch import ScheduledCall
-from pulp.server.itineraries.repo import dummy_itinerary
+from pulp.server.db.model.repository import RepoImporter, RepoDistributor
 from pulp.server.managers import factory as managers_factory
 from pulp.server.managers.schedule import utils
+from pulp.server.tasks.repository import sync_with_auto_publish, publish
 
 
 _PUBLISH_OPTION_KEYS = ('override_config',)
@@ -27,8 +28,7 @@ class RepoSyncScheduleManager(object):
     def list(cls, repo_id, importer_id):
         cls.validate_importer(repo_id, importer_id)
 
-        schedule_ids = managers_factory.repo_importer_manager().list_sync_schedules(repo_id)
-        return utils.get(schedule_ids)
+        return utils.get_by_resource(RepoImporter.build_resource_tag(repo_id, importer_id))
 
     @classmethod
     def create(cls, repo_id, importer_id, sync_options, schedule_data):
@@ -48,14 +48,19 @@ class RepoSyncScheduleManager(object):
 
         utils.validate_initial_schedule_options(schedule_data)
 
-        # TODO: put sync itinerary here
-        task = dummy_itinerary.name
+        task = sync_with_auto_publish.name
         args = [repo_id]
         kwargs = {'overrides': sync_options['override_config']}
-        schedule = ScheduledCall(schedule_data['schedule'], task, args=args, kwargs=kwargs)
+        resource = RepoImporter.build_resource_tag(repo_id, importer_id)
+        schedule = ScheduledCall(schedule_data['schedule'], task, args=args,
+                                 kwargs=kwargs, resource=resource)
         schedule.save()
-
-        managers_factory.repo_importer_manager().add_sync_schedule(repo_id, schedule.id)
+        try:
+            cls.validate_importer(repo_id, importer_id)
+        except exceptions.MissingResource:
+            # back out of this whole thing, since the importer disappeared
+            utils.delete(schedule.id)
+            raise
 
         return schedule
 
@@ -93,10 +98,6 @@ class RepoSyncScheduleManager(object):
         # validate the input
         cls.validate_importer(repo_id, importer_id)
 
-        # remove from the importer
-        importer_manager = managers_factory.repo_importer_manager()
-        importer_manager.remove_sync_schedule(repo_id, schedule_id)
-
         # remove from the scheduler
         utils.delete(schedule_id)
 
@@ -114,9 +115,7 @@ class RepoPublishScheduleManager(object):
     def list(cls, repo_id, distributor_id):
         cls.validate_distributor(repo_id, distributor_id)
 
-        repo_dist_manager = managers_factory.repo_distributor_manager()
-        schedule_ids = repo_dist_manager.list_publish_schedules(repo_id, distributor_id)
-        return utils.get(schedule_ids)
+        return utils.get_by_resource(RepoDistributor.build_resource_tag(repo_id, distributor_id))
 
     @classmethod
     def create(cls, repo_id, distributor_id, publish_options, schedule_data):
@@ -135,15 +134,13 @@ class RepoPublishScheduleManager(object):
 
         utils.validate_initial_schedule_options(schedule_data)
 
-        # TODO: put publish itinerary here
-        task = dummy_itinerary.name
+        task = publish.name
         args = [repo_id, distributor_id]
         kwargs = {'overrides': publish_options['override_config']}
-        schedule = ScheduledCall(schedule_data['schedule'], task, args=args, kwargs=kwargs)
+        resource = RepoDistributor.build_resource_tag(repo_id, distributor_id)
+        schedule = ScheduledCall(schedule_data['schedule'], task, args=args,
+                                 kwargs=kwargs, resource=resource)
         schedule.save()
-
-        dist_manager = managers_factory.repo_distributor_manager()
-        dist_manager.add_publish_schedule(repo_id, distributor_id, schedule.id)
 
         return schedule
 
@@ -180,10 +177,6 @@ class RepoPublishScheduleManager(object):
         """
         # validate the input
         cls.validate_distributor(repo_id, distributor_id)
-
-        # remove from the distributor
-        dispatch_manager = managers_factory.repo_distributor_manager()
-        dispatch_manager.remove_publish_schedule(repo_id, distributor_id, schedule_id)
 
         # remove from the scheduler
         utils.delete(schedule_id)

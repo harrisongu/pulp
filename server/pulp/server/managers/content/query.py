@@ -11,6 +11,7 @@
 # have received a copy of GPLv2 along with this software; if not, see
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
 
+import errno
 import os
 from gettext import gettext as _
 from pprint import pformat
@@ -257,8 +258,13 @@ class ContentQueryManager(object):
         # I'm partitioning the content on the file system based on content type
         storage_dir = pulp_config.config.get('server', 'storage_dir')
         root = os.path.join(storage_dir, 'content', content_type)
-        if not os.path.exists(root):
+        try:
             os.makedirs(root)
+        except OSError, e:
+            if e.errno == errno.EEXIST:
+                pass
+            else:
+                raise
         return root
 
     def request_content_unit_file_path(self, content_type, relative_path):

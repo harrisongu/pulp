@@ -31,6 +31,12 @@ def get(schedule_ids):
     return map(ScheduledCall.from_db, schedules)
 
 
+def get_by_resource(resource):
+    criteria = Criteria(filters={'resource': resource})
+    schedules = ScheduledCall.get_collection().query(criteria)
+    return map(ScheduledCall.from_db, schedules)
+
+
 def delete(schedule_id):
     ScheduledCall.get_collection().remove({'_id': ObjectId(schedule_id)}, safe=True)
 
@@ -41,6 +47,10 @@ def update(schedule_id, delta):
         raise exceptions.UnsupportedValue(list(unknown_keys))
 
     delta['last_updated'] = time.time()
+
+    kwargs = delta.pop('kwargs', {})
+    for key, value in kwargs.iteritems():
+        delta['kwargs.%s' % key] = value
 
     spec = {'_id': ObjectId(schedule_id)}
     ScheduledCall.get_collection().update(spec, {'$set': delta}, safe=True)

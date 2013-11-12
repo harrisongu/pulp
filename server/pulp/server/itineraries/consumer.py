@@ -29,13 +29,6 @@ from pulp.server.managers import factory as managers_factory
 logger = logging.getLogger(__name__)
 
 
-@celery.task
-def dummy_itinerary(*args, **kwargs):
-    logger.info('task: ' + current_task.name)
-    logger.info('args: ' + str(args))
-    logger.info('kwargs: ' + str(kwargs))
-
-
 def cancel_agent_request(call_request, call_report):
     """
     Cancel the agent request associated with the task.

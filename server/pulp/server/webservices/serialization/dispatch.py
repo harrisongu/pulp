@@ -30,7 +30,6 @@ def task_group_href(call_report):
 
 
 def scheduled_unit_management_obj(scheduled_call):
-    obj = scheduled_call_obj(scheduled_call)
-    obj['options'] = scheduled_call['call_request'].kwargs['options']
-    obj['units'] = scheduled_call['call_request'].kwargs['units']
-    return obj
+    scheduled_call['options'] = scheduled_call['kwargs']['options']
+    scheduled_call['units'] = scheduled_call['kwargs']['units']
+    return scheduled_call

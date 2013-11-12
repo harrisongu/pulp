@@ -12,7 +12,6 @@
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
 
 from datetime import timedelta
-from gettext import gettext as _
 import logging
 import sys
 
@@ -24,13 +23,12 @@ from pulp.server import config as pulp_config
 from pulp.server.auth.authorization import CREATE, READ, DELETE, EXECUTE, UPDATE
 from pulp.server.db.model.criteria import UnitAssociationCriteria, Criteria
 from pulp.server.db.model.repository import RepoContentUnit, Repo
-from pulp.server.dispatch import constants as dispatch_constants, factory as dispatch_factory
+from pulp.server.dispatch import constants as dispatch_constants
 from pulp.server.dispatch.call import CallRequest
-from pulp.server.itineraries.repo import sync_with_auto_publish_itinerary, publish_itinerary
+from pulp.server.itineraries.repo import sync_with_auto_publish_itinerary
 from pulp.server.itineraries.repository import (repo_delete_itinerary, distributor_delete_itinerary,
                                                 distributor_update_itinerary)
-from pulp.server.managers.schedule import utils
-from pulp.server.managers.schedule.repo import RepoSyncScheduleManager
+from pulp.server.tasks.repository import publish
 from pulp.server.webservices import execution
 from pulp.server.webservices import serialization
 from pulp.server.webservices.controllers.base import JSONController
@@ -419,7 +417,6 @@ class SyncScheduleCollection(JSONController):
     @auth_required(CREATE)
     def POST(self, repo_id, importer_id):
         manager = manager_factory.repo_sync_schedule_manager()
-        manager.validate_importer(repo_id, importer_id)
 
         schedule_options = self.params()
         sync_options = {'override_config': schedule_options.pop('override_config', {})}
@@ -578,7 +575,6 @@ class PublishScheduleCollection(JSONController):
     @auth_required(CREATE)
     def POST(self, repo_id, distributor_id):
         manager = manager_factory.repo_publish_schedule_manager()
-        manager.validate_distributor(repo_id, distributor_id)
 
         schedule_options = self.params()
         publish_options = {'override_config': schedule_options.pop('override_config', {})}
@@ -736,9 +732,7 @@ class RepoPublish(JSONController):
         distributor_id = params.get('id', None)
         overrides = params.get('override_config', None)
 
-        call_request = publish_itinerary(repo_id, distributor_id, overrides)[0]
-
-        return execution.execute_async(self, call_request)
+        return self.ok(publish(repo_id, distributor_id, overrides).id)
 
 
 class RepoAssociate(JSONController):
