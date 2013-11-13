@@ -52,9 +52,12 @@ def update(schedule_id, delta):
     for key, value in kwargs.iteritems():
         delta['kwargs.%s' % key] = value
 
-    spec = {'_id': ObjectId(schedule_id)}
-    ScheduledCall.get_collection().update(spec, {'$set': delta}, safe=True)
-
+    spec = {'_id': schedule_id}
+    schedule = ScheduledCall.get_collection().find_and_modify(
+        query=spec, update={'$set': delta}, safe=True, new=True)
+    if schedule is None:
+        raise exceptions.MissingResource(schedule_id=schedule_id)
+    return ScheduledCall.from_db(schedule)
 
 def validate_keys(options, valid_keys, all_required=False):
     """

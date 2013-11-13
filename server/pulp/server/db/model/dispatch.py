@@ -139,18 +139,22 @@ class ScheduledCall(Model):
 
         if id is None:
             # this creates self._id and self.id
-            #super(ScheduledCall, self).__init__()
-            self._id = ObjectId()
-            id = str(self._id) # legacy behavior, would love to rid ourselves of this
+            super(ScheduledCall, self).__init__()
             self._new = True
         else:
+            self.id = id
+            self._id = ObjectId(id)
             self._new = False
 
+        if hasattr(task, 'name'):
+            task = task.name
+
+        self.args = args or []
         self.consecutive_failures = consecutive_failures
         self.enabled = enabled
         self.failure_threshold = failure_threshold
-        self.id = id
         self.iso_schedule = iso_schedule
+        self.kwargs = kwargs or {}
         self.last_run_at = last_run_at
         self.last_updated = last_updated or time.time()
         self.name = id
@@ -163,11 +167,9 @@ class ScheduledCall(Model):
             interval, start_time, occurrences = dateutils.parse_iso8601_interval(iso_schedule)
             schedule = pickle.dumps(CelerySchedule(interval))
 
-        args = args or []
-        kwargs = kwargs or {}
         principal = principal or factory.principal_manager().get_principal()
 
-        for key in ('schedule', 'args', 'kwargs', 'principal'):
+        for key in ('schedule', 'principal'):
             value = locals()[key]
             if isinstance(value, basestring):
                 setattr(self, key, value)
@@ -210,9 +212,8 @@ class ScheduledCall(Model):
         else:
             last_run = dateutils.parse_iso8601_datetime(self.last_run_at)
         return ScheduleEntry(self.name, self.task, last_run, self.total_run_count,
-                             pickle.loads(self.schedule), pickle.loads(self.args),
-                             pickle.loads(self.kwargs), self.options,
-                             self.relative, scheduled_call=self)
+                             pickle.loads(self.schedule), self.args, self.kwargs,
+                             self.option, self.relative, scheduled_call=self)
 
     @staticmethod
     def explode_schedule_entry(entry):
@@ -230,12 +231,12 @@ class ScheduledCall(Model):
 
     def as_dict(self):
         return {
+            '_id': str(self._id),
             'args': self.args,
             'consecutive_failures': self.consecutive_failures,
             'enabled': self.enabled,
             'failure_threshold': self.failure_threshold,
             'first_run': self.first_run,
-            'id': self.id,
             'kwargs': self.kwargs,
             'iso_schedule': self.iso_schedule,
             'last_run_at': self.last_run_at,
@@ -252,7 +253,8 @@ class ScheduledCall(Model):
     def for_display(self):
         ret = self.as_dict()
         del ret['principal']
-        del ret['schedule']
+        # preserving external API compatibility
+        ret['schedule'] = ret.pop('iso_schedule')
         return ret
 
     def save(self):
@@ -261,11 +263,10 @@ class ScheduledCall(Model):
         """
         if self._new:
             as_dict = self.as_dict()
-            as_dict['_id'] = self._id
             self.get_collection().insert(as_dict, safe=True)
             self._new = False
         else:
-            self.get_collection().update({'_id': ObjectId(self.id)}, self.as_dict())
+            self.get_collection().update({'_id': self._id}, self.as_dict())
 
     def _calculate_times(self):
         now_s = time.time()
