@@ -59,19 +59,25 @@ class ContentType(Model):
         self.referenced_types = referenced_types
 
 
-class DownloadCatalog(Model):
+class UnitCatalog(Model):
 
-    collection_name = 'content_download_catalog'
-    unique_indices = ('unit_id',)
+    collection_name = 'unit_catalog'
+    unique_indices = ('locator',)
 
     @staticmethod
-    def hash(type_id, unit_key):
+    def get_locator(type_id, unit_key):
         h = sha256()
         h.update(type_id)
-        h.update(repr(sorted(unit_key.items())))
+        if isinstance(unit_key, dict):
+            h.update(repr(sorted(unit_key.items())))
+        else:
+            h.update(unit_key)
         return h.hexdigest()
 
-    def __init__(self, type_id, unit_key, url):
+    def __init__(self, source_id, type_id, unit_key, url):
         Model.__init__(self)
-        self.unit_id = self.hash(type_id, unit_key)
+        self.source_id = source_id
+        self.type_id = type_id
+        self.unit_key = unit_key
+        self.locator = self.get_locator(type_id, unit_key)
         self.url = url
