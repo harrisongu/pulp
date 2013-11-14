@@ -21,7 +21,7 @@ from nectar.downloaders.local import LocalFileDownloader
 from base import PulpAsyncServerTests
 
 from pulp.server.db.model.content import UnitCatalog
-from pulp.server.managers.content.catalog import DownloadManager, Unit
+from pulp.server.managers.content.download import DownloadManager, Unit
 
 PRIMARY = 'primary'
 UNIT_WORLD = 'unit-world'
@@ -86,7 +86,7 @@ class TestDownloading(PulpAsyncServerTests):
             collection.insert(unit, safe=True)
         return units
 
-    @patch('pulp.server.managers.content.catalog.Downloader', LocalFileDownloader)
+    @patch('pulp.server.managers.content.download.Downloader', LocalFileDownloader)
     def test_download(self):
         units = []
         cataloged = self.populate_catalog(UNIT_WORLD, 0, 10)
