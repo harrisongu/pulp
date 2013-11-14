@@ -20,7 +20,7 @@ from nectar.downloaders.local import LocalFileDownloader
 
 from base import PulpAsyncServerTests
 
-from pulp.server.db.model.content import UnitCatalog
+from pulp.server.db.model.content import ContentCatalog
 from pulp.server.managers.content.download import DownloadManager, Unit
 
 PRIMARY = 'primary'
@@ -42,7 +42,7 @@ class TestDownloading(PulpAsyncServerTests):
 
     def setUp(self):
         PulpAsyncServerTests.setUp(self)
-        UnitCatalog.get_collection().remove()
+        ContentCatalog.get_collection().remove()
         self.tmp_dir = mkdtemp()
         self.downloaded = os.path.join(self.tmp_dir, 'downloaded')
         os.makedirs(self.downloaded)
@@ -50,7 +50,7 @@ class TestDownloading(PulpAsyncServerTests):
 
     def tearDown(self):
         PulpAsyncServerTests.tearDown(self)
-        UnitCatalog.get_collection().remove()
+        ContentCatalog.get_collection().remove()
         shutil.rmtree(self.tmp_dir, ignore_errors=True)
 
     def add_sources(self):
@@ -70,7 +70,7 @@ class TestDownloading(PulpAsyncServerTests):
 
     def populate_catalog(self, source_id, n_start, n_units):
         _dir = self.populate_content(source_id, n_start, n_units)
-        collection = UnitCatalog.get_collection()
+        collection = ContentCatalog.get_collection()
         units = []
         for n in range(n_start, n_start + n_units):
             unit_key = {
@@ -80,7 +80,7 @@ class TestDownloading(PulpAsyncServerTests):
                 'checksum': str(uuid4())
             }
             url = 'file://%s/unit_%d' % (_dir, n)
-            unit = UnitCatalog(source_id, TYPE_ID, unit_key, url)
+            unit = ContentCatalog(source_id, TYPE_ID, unit_key, url)
             units.append(unit)
         for unit in units:
             collection.insert(unit, safe=True)

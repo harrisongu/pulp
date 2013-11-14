@@ -9,30 +9,30 @@
 # have received a copy of GPLv2 along with this software; if not, see
 # http://www.gnu.org/licenses/old-licenses/gpl-2.0.txt.
 
-from pulp.server.db.model.content import UnitCatalog
+from pulp.server.db.model.content import ContentCatalog
 
 
-class UnitCatalogManager(object):
+class ContentCatalogManager(object):
 
     def add_entry(self, source_id, type_id, unit_key, url):
-        collection = UnitCatalog .collection()
-        entry = UnitCatalog (source_id, type_id, unit_key, url)
+        collection = ContentCatalog .collection()
+        entry = ContentCatalog (source_id, type_id, unit_key, url)
         collection.insert(entry, safe=True)
 
     def delete_entry(self, source_id, type_id, unit_key):
-        collection = UnitCatalog .collection()
-        locator = UnitCatalog .get_locator(type_id, unit_key)
+        collection = ContentCatalog .collection()
+        locator = ContentCatalog .get_locator(type_id, unit_key)
         query = dict(source_id=source_id, locator=locator)
         collection.delete(query, safe=True)
 
     def purge(self, source_id):
-        collection = UnitCatalog .collection()
+        collection = ContentCatalog .collection()
         query = dict(source_id=source_id)
         collection.delete(query, safe=True)
 
     def find(self, type_id, unit_key):
-        collection = UnitCatalog.get_collection()
-        locator = UnitCatalog .get_locator(type_id, unit_key)
+        collection = ContentCatalog.get_collection()
+        locator = ContentCatalog .get_locator(type_id, unit_key)
         query = dict(locator=locator)
         cursor = collection.find(query)
         return list(cursor)

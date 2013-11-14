@@ -19,7 +19,7 @@ from nectar.config import DownloaderConfig
 from nectar.request import DownloadRequest
 from nectar.downloaders.threaded import HTTPThreadedDownloader as Downloader
 
-from pulp.server.managers.content.catalog import UnitCatalogManager
+from pulp.server.managers import factory as managers
 
 
 # --- constants --------------------------------------------------------------
@@ -103,7 +103,7 @@ class Unit(object):
 
     def find_sources(self, primary, alternates):
         resolved = [(primary, self.url)]
-        manager = UnitCatalogManager()
+        manager = managers.content_catalog_manager()
         for entry in manager.find(self.type_id, self.key):
             source_id = entry[SOURCE_ID]
             source = alternates.get(source_id)

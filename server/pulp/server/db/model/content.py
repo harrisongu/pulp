@@ -59,9 +59,9 @@ class ContentType(Model):
         self.referenced_types = referenced_types
 
 
-class UnitCatalog(Model):
+class ContentCatalog(Model):
 
-    collection_name = 'unit_catalog'
+    collection_name = 'content_catalog'
     unique_indices = ('locator',)
 
     @staticmethod
